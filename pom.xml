@@ -31,6 +31,12 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Spring Boot Actuator -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- AWS DynamoDB Enhanced Client -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
