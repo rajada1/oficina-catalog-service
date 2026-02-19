@@ -1,6 +1,7 @@
 # === Maven Build ===
 target/
 *.class
+tech_challenge_k8s_infra/
 
 # === IDE ===
 .idea/
