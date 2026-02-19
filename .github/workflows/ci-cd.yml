@@ -138,7 +138,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: rajada1/${{ env.K8S_INFRA_REPO }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Use a Personal Access Token (repo scope) if the infra repo is private
+          # Store it as a secret named PERSONAL_ACCESS_TOKEN in this repository
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
           path: k8s-infra
 
       - name: Configure AWS Credentials
