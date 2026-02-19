@@ -86,6 +86,3 @@ spec:
             preStop:
               exec:
                 command: ["/bin/sh", "-c", "sleep 15"]
-apiVersion: apps/v1
-
-kind: Deployment
