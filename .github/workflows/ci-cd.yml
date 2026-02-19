@@ -97,6 +97,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Verify AWS credentials and list clusters
+        run: |
+          echo "Caller identity:"
+          aws sts get-caller-identity || { echo "Invalid AWS credentials"; exit 1; }
+          echo "EKS clusters in region ${{ env.AWS_REGION }}:"
+          aws eks list-clusters --region ${{ env.AWS_REGION }} || true
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -187,11 +194,24 @@ jobs:
 
           echo "Secrets retrieved successfully."
 
+      - name: Show retrieved environment variables
+        run: |
+          echo "EKS_CLUSTER_NAME=${{ env.EKS_CLUSTER_NAME }}"
+          echo "AWS_REGION=${{ env.AWS_REGION }}"
+          env | grep -E 'EKS_CLUSTER_NAME|AWS_REGION|DB_' || true
+
       - name: Configure kubectl
         run: |
           aws eks update-kubeconfig \
             --region ${{ env.AWS_REGION }} \
             --name ${{ env.EKS_CLUSTER_NAME }}
+
+      - name: Validate kubectl
+        run: |
+          echo "kubectl version and cluster-info"
+          kubectl version --client || true
+          kubectl cluster-info || { echo "kubectl cannot reach cluster; dumping kubeconfig"; kubectl config view --minify; exit 1; }
+          kubectl get nodes -o wide || true
 
       - name: Create/Update Namespace
         run: |
