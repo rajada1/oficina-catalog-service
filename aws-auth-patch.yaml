@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-auth
+  namespace: kube-system
+data:
+  mapUsers: |
+    - userarn: arn:aws:iam::124731138716:user/cli-eldutra
+      username: cli-eldutra
+      groups:
+        - system:masters

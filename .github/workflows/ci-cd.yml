@@ -141,14 +141,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout K8s Infra Repository
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          repository: rajada1/${{ env.K8S_INFRA_REPO }}
-          # Use a Personal Access Token (repo scope) if the infra repo is private
-          # Store it as a secret named PERSONAL_ACCESS_TOKEN in this repository
-          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
-          path: k8s-infra
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -245,25 +239,14 @@ jobs:
           # Execute and apply
           eval "$SECRET_CMD" | kubectl apply -f -
 
-      - name: Verify infra checkout
-        run: |
-          echo "Checking for k8s-infra directory..."
-          if [ -d k8s-infra ]; then
-            echo "k8s-infra exists. Listing top-level:"; ls -la k8s-infra || true
-          else
-            echo "k8s-infra missing. Will attempt fallback HTTPS clone using PERSONAL_ACCESS_TOKEN if available.";
-            if [ -z "${{ secrets.PERSONAL_ACCESS_TOKEN }}" ]; then
-              echo "PERSONAL_ACCESS_TOKEN secret not set; cannot clone infra repo."; exit 1;
-            fi
-            git clone https://x-access-token:${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/rajada1/${{ env.K8S_INFRA_REPO }}.git k8s-infra || { echo "Fallback clone failed"; exit 1; }
-            echo "Fallback clone succeeded; listing top-level:"; ls -la k8s-infra || true
-          fi
+      - name: (skip) infra checkout removed
+        run: echo "Using k8s manifests from this repository's k8s/ folder"
 
       - name: Deploy to EKS
         run: |
-          cd k8s-infra/microservices/catalog-service
+          cd k8s
 
-          # Apply all manifests
+          # Apply all manifests in this repo
           kubectl apply -k . -n ${{ env.SERVICE_NAME }}
 
           # Update image with correct tag
