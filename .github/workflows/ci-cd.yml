@@ -167,24 +167,36 @@ jobs:
           echo "Retrieving parameters from SSM..."
           ENVIRONMENT=${{ github.event.inputs.environment || 'dev' }}
 
-          # Database credentials
-          DB_ENDPOINT=$(aws ssm get-parameter --name "/microservices/$ENVIRONMENT/catalog-service-db/endpoint" --query "Parameter.Value" --output text)
-          DB_HOST=${DB_ENDPOINT%:*}
-          DB_PORT=$(aws ssm get-parameter --name "/microservices/$ENVIRONMENT/catalog-service-db/port" --query "Parameter.Value" --output text)
-          DB_NAME=$(aws ssm get-parameter --name "/microservices/$ENVIRONMENT/catalog-service-db/name" --query "Parameter.Value" --output text)
+          # Helper to safely get parameter (returns empty string if not found)
+          get_param() {
+            aws ssm get-parameter --name "$1" --with-decryption --query "Parameter.Value" --output text 2>/dev/null || true
+          }
 
-          # EKS Cluster Name
-          EKS_CLUSTER_NAME=$(aws ssm get-parameter --name "/microservices/$ENVIRONMENT/eks/cluster_name" --query "Parameter.Value" --output text 2>/dev/null || echo "${{ env.EKS_CLUSTER_NAME }}")
+          # Database credentials (may not exist for DynamoDB-backed deployments)
+          DB_ENDPOINT=$(get_param "/microservices/$ENVIRONMENT/catalog-service-db/endpoint")
+          if [ -n "$DB_ENDPOINT" ]; then
+            DB_HOST=${DB_ENDPOINT%:*}
+          else
+            DB_HOST=""
+          fi
+          DB_PORT=$(get_param "/microservices/$ENVIRONMENT/catalog-service-db/port")
+          DB_NAME=$(get_param "/microservices/$ENVIRONMENT/catalog-service-db/name")
+
+          # EKS Cluster Name (fallback to env if param not found)
+          EKS_CLUSTER_NAME=$(get_param "/microservices/$ENVIRONMENT/eks/cluster_name")
+          if [ -z "$EKS_CLUSTER_NAME" ]; then
+            EKS_CLUSTER_NAME="${{ env.EKS_CLUSTER_NAME }}"
+          fi
 
           # Secure credentials
-          DB_USER=$(aws ssm get-parameter --name "/microservices/$ENVIRONMENT/catalog-service-db/username" --with-decryption --query "Parameter.Value" --output text)
-          DB_PASS=$(aws ssm get-parameter --name "/microservices/$ENVIRONMENT/catalog-service-db/password" --with-decryption --query "Parameter.Value" --output text)
+          DB_USER=$(get_param "/microservices/$ENVIRONMENT/catalog-service-db/username")
+          DB_PASS=$(get_param "/microservices/$ENVIRONMENT/catalog-service-db/password")
 
-          # Mask secrets
-          echo "::add-mask::$DB_USER"
-          echo "::add-mask::$DB_PASS"
+          # Mask secrets if present
+          if [ -n "$DB_USER" ]; then echo "::add-mask::$DB_USER"; fi
+          if [ -n "$DB_PASS" ]; then echo "::add-mask::$DB_PASS"; fi
 
-          # Export to environment
+          # Export to environment (may be empty)
           echo "DB_HOST=$DB_HOST" >> $GITHUB_ENV
           echo "DB_PORT=$DB_PORT" >> $GITHUB_ENV
           echo "DB_NAME=$DB_NAME" >> $GITHUB_ENV
@@ -192,7 +204,7 @@ jobs:
           echo "DB_PASS=$DB_PASS" >> $GITHUB_ENV
           echo "EKS_CLUSTER_NAME=$EKS_CLUSTER_NAME" >> $GITHUB_ENV
 
-          echo "Secrets retrieved successfully."
+          echo "Secrets retrieval complete (missing parameters are allowed)."
 
       - name: Show retrieved environment variables
         run: |
@@ -219,16 +231,19 @@ jobs:
 
       - name: Create/Update Secrets with Database Credentials
         run: |
-          kubectl create secret generic catalog-service-secrets \
-            --from-literal=DB_HOST='${{ env.DB_HOST }}' \
-            --from-literal=DB_PORT='${{ env.DB_PORT }}' \
-            --from-literal=DB_NAME='${{ env.DB_NAME }}' \
-            --from-literal=DB_USERNAME='${{ env.DB_USER }}' \
-            --from-literal=DB_PASSWORD='${{ env.DB_PASS }}' \
-            --from-literal=JWT_SECRET='${{ secrets.JWT_SECRET }}' \
-            --from-literal=NEW_RELIC_LICENSE_KEY='${{ secrets.NEW_RELIC_LICENSE_KEY }}' \
-            --namespace=${{ env.SERVICE_NAME }} \
-            --dry-run=client -o yaml | kubectl apply -f -
+          # Build secret only with non-empty values (DB_* may be empty for DynamoDB deployments)
+          SECRET_CMD="kubectl create secret generic catalog-service-secrets"
+          if [ -n "${{ env.DB_HOST }}" ]; then SECRET_CMD+=" --from-literal=DB_HOST='${{ env.DB_HOST }}'"; fi
+          if [ -n "${{ env.DB_PORT }}" ]; then SECRET_CMD+=" --from-literal=DB_PORT='${{ env.DB_PORT }}'"; fi
+          if [ -n "${{ env.DB_NAME }}" ]; then SECRET_CMD+=" --from-literal=DB_NAME='${{ env.DB_NAME }}'"; fi
+          if [ -n "${{ env.DB_USER }}" ]; then SECRET_CMD+=" --from-literal=DB_USERNAME='${{ env.DB_USER }}'"; fi
+          if [ -n "${{ env.DB_PASS }}" ]; then SECRET_CMD+=" --from-literal=DB_PASSWORD='${{ env.DB_PASS }}'"; fi
+          SECRET_CMD+=" --from-literal=JWT_SECRET='${{ secrets.JWT_SECRET }}'"
+          SECRET_CMD+=" --from-literal=NEW_RELIC_LICENSE_KEY='${{ secrets.NEW_RELIC_LICENSE_KEY }}'"
+          SECRET_CMD+=" --namespace=${{ env.SERVICE_NAME }} --dry-run=client -o yaml"
+
+          # Execute and apply
+          eval "$SECRET_CMD" | kubectl apply -f -
 
       - name: Deploy to EKS
         run: |
