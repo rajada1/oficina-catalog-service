@@ -208,9 +208,26 @@ jobs:
 
       - name: Configure kubectl
         run: |
-          aws eks update-kubeconfig \
-            --region ${{ env.AWS_REGION }} \
-            --name ${{ env.EKS_CLUSTER_NAME }}
+          # Wait for EKS cluster to become ACTIVE (timeout ~10 minutes)
+          MAX_RETRIES=30
+          SLEEP_SEC=20
+          status=""
+          for i in $(seq 1 $MAX_RETRIES); do
+            status=$(aws eks describe-cluster --name "${{ env.EKS_CLUSTER_NAME }}" --region "${{ env.AWS_REGION }}" --query "cluster.status" --output text 2>/dev/null || echo "")
+            echo "EKS status: $status (attempt $i/$MAX_RETRIES)"
+            if [ "$status" = "ACTIVE" ]; then
+              break
+            fi
+            sleep $SLEEP_SEC
+          done
+
+          if [ "$status" != "ACTIVE" ]; then
+            echo "Cluster not ACTIVE after $((MAX_RETRIES*SLEEP_SEC))s. Dumping cluster info for debugging."
+            aws eks describe-cluster --name "${{ env.EKS_CLUSTER_NAME }}" --region "${{ env.AWS_REGION }}"
+            exit 1
+          fi
+
+          aws eks update-kubeconfig --region "${{ env.AWS_REGION }}" --name "${{ env.EKS_CLUSTER_NAME }}"
 
       - name: Validate kubectl
         run: |
